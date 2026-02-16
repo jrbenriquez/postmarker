@@ -38,6 +38,42 @@ def prepare_attachments(attachment):
         }
         if len(attachment) == 4:
             result["ContentID"] = attachment[3]
+    elif isinstance(attachment, EmailMessage):
+        # Handle EmailMessage objects (from email.message module)
+        # These can come from Django's message.message() or deconstruct_multipart
+        payload = attachment.get_payload(decode=True)
+        if payload is None:
+            # For multipart or string payloads
+            payload = attachment.get_payload()
+        if isinstance(payload, bytes):
+            content = b64encode(payload).decode()
+        elif isinstance(payload, str):
+            content = b64encode(payload.encode('utf-8')).decode()
+        else:
+            # For multipart messages, serialize the entire message
+            content = b64encode(attachment.as_bytes()).decode()
+        
+        content_type = attachment.get_content_type()
+        filename = attachment.get_filename()
+        if filename is None:
+            # Generate filename based on content type
+            if content_type == "message/rfc822":
+                filename = "message.eml"
+            else:
+                filename = "attachment.txt"
+        
+        result = {
+            "Name": filename,
+            "Content": content,
+            "ContentType": content_type,
+        }
+        content_id = attachment.get("Content-ID")
+        if content_id:
+            if content_id.startswith("<") and content_id.endswith(">"):
+                content_id = content_id[1:-1]
+            if (attachment.get("Content-Disposition") or "").startswith("inline"):
+                content_id = "cid:%s" % content_id
+            result["ContentID"] = content_id
     elif isinstance(attachment, MIMEBase):
         payload = attachment.get_payload()
         content_type = attachment.get_content_type()
