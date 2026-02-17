@@ -1,3 +1,4 @@
+import sys
 from functools import partial
 
 import pytest
@@ -5,6 +6,17 @@ from requests import Response
 from tornado.web import Application, RequestHandler
 
 from postmarker.tornado import PostmarkMixin
+
+# Skip all tornado tests if pytest-tornado is not installed
+# This happens when using generic py-djangoXX tox environments
+pytest_plugins = []
+try:
+    import pytest_tornado  # noqa: F401
+
+    pytest_plugins.append("pytest_tornado")
+except ImportError:
+    # pytest-tornado not available, skip all tests in this directory
+    pytestmark = pytest.mark.skip(reason="pytest-tornado not installed")
 
 
 class BaseHandler(PostmarkMixin, RequestHandler):
