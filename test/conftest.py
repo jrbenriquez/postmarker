@@ -1,6 +1,6 @@
 import os
 from contextlib import contextmanager
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from betamax import Betamax
@@ -21,12 +21,16 @@ ACCOUNT_TOKEN = os.environ.get("ACCOUNT_TOKEN", DEFAULT_ACCOUNT_TOKEN)
 
 
 def pytest_addoption(parser):
-    parser.addoption("--record", action="store_true", help="Runs cleanup for recording session")
+    parser.addoption(
+        "--record", action="store_true", help="Runs cleanup for recording session"
+    )
 
 
 def pytest_unconfigure(config):
     if config.getoption("--record"):
-        replace_real_credentials(CASSETTE_DIR, SERVER_TOKEN, "X-Postmark-Server-Token", DEFAULT_SERVER_TOKEN)
+        replace_real_credentials(
+            CASSETTE_DIR, SERVER_TOKEN, "X-Postmark-Server-Token", DEFAULT_SERVER_TOKEN
+        )
         replace_real_credentials(
             CASSETTE_DIR,
             ACCOUNT_TOKEN,
@@ -84,13 +88,18 @@ def server(postmark):
 
 @pytest.fixture
 def email(postmark):
-    return postmark.emails.Email(From="sender@example.com", To="receiver@example.com", TextBody="text")
+    return postmark.emails.Email(
+        From="sender@example.com", To="receiver@example.com", TextBody="text"
+    )
 
 
 @pytest.fixture
 def email_template(postmark):
     return postmark.emails.EmailTemplate(
-        From="sender@example.com", To="receiver@example.com", TemplateId=983381, TemplateModel={}
+        From="sender@example.com",
+        To="receiver@example.com",
+        TemplateId=983381,
+        TemplateModel={},
     )
 
 
@@ -262,3 +271,10 @@ DELIVERY_WEBHOOK = """{
 @pytest.fixture
 def delivery_webhook():
     return Delivery.from_json(DELIVERY_WEBHOOK)
+
+
+@pytest.fixture
+def postmark_request():
+    """Mock the requests.Session.request method used by PostmarkClient."""
+    with patch("requests.Session.request") as mock_request:
+        yield mock_request

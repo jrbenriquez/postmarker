@@ -51,8 +51,59 @@ jobs:
   tests:
     strategy:
       matrix:
-        os: [ubuntu-20.04, windows-latest]
-        python: ["3.6", "3.7", "3.8", "3.9", "3.10", "pypy-3.7", "pypy-3.8"]
+        include:
+          # Python 3.6-3.10: Test with Django 3.2
+          - os: ubuntu-20.04
+            python: "3.6"
+            tox-env: py-django32
+          - os: windows-latest
+            python: "3.6"
+            tox-env: py-django32
+          - os: ubuntu-20.04
+            python: "3.7"
+            tox-env: py-django32
+          - os: windows-latest
+            python: "3.7"
+            tox-env: py-django32
+          - os: ubuntu-20.04
+            python: "3.8"
+            tox-env: py-django32
+          - os: windows-latest
+            python: "3.8"
+            tox-env: py-django32
+          - os: ubuntu-20.04
+            python: "3.9"
+            tox-env: py-django32
+          - os: windows-latest
+            python: "3.9"
+            tox-env: py-django32
+          - os: ubuntu-20.04
+            python: "3.10"
+            tox-env: py-django32
+          - os: windows-latest
+            python: "3.10"
+            tox-env: py-django32
+          # Python 3.11-3.12: Test with Django 4.2
+          - os: ubuntu-20.04
+            python: "3.11"
+            tox-env: py-django42
+          - os: windows-latest
+            python: "3.11"
+            tox-env: py-django42
+          - os: ubuntu-20.04
+            python: "3.12"
+            tox-env: py-django42
+          - os: windows-latest
+            python: "3.12"
+            tox-env: py-django42
+          # PyPy: Test with Django 3.2
+          # Note: PyPy 3.7 excluded due to asgiref incompatibility with Django 3.2
+          - os: ubuntu-20.04
+            python: "pypy-3.8"
+            tox-env: py-django32
+          - os: windows-latest
+            python: "pypy-3.8"
+            tox-env: py-django32
 
     name: ${{ matrix.python }} on ${{ matrix.os }} tests
     runs-on: ${{ matrix.os }}
@@ -68,7 +119,7 @@ jobs:
       - run: pip install tox coverage
 
       - name: Run Python ${{ matrix.python }} tox job
-        run: tox -e py-django32
+        run: tox -e ${{ matrix.tox-env }}
 
       - run: coverage combine
       - run: coverage report
@@ -83,7 +134,7 @@ jobs:
   tests-django:
     strategy:
       matrix:
-        django_version: ["22", "32", "40"]
+        django_version: ["22", "32", "40", "42", "50", "60"]
 
     name: Django ${{ matrix.django_version }} tests
     runs-on: ubuntu-20.04

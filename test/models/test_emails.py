@@ -15,7 +15,9 @@ CASSETTE_NAME = "emails"
 
 
 def get_attachment_path(filename):
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "attachments/%s" % filename))
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "attachments/%s" % filename)
+    )
 
 
 if platform.system() in {"Linux", "Darwin"}:
@@ -114,7 +116,9 @@ class TestSimpleSend:
         }
 
     def test_minimum_mime(self, postmark):
-        message = get_mime_message("Text", From="sender@example.com", To="receiver@example.com")
+        message = get_mime_message(
+            "Text", From="sender@example.com", To="receiver@example.com"
+        )
         response = postmark.emails.send(message=message)
         assert response == {
             "ErrorCode": 0,
@@ -127,12 +131,17 @@ class TestSimpleSend:
     def test_invalid(self, postmark):
         with pytest.raises(TypeError) as exc:
             postmark.emails.send(message=object())
-        assert str(exc.value) == "message should be either Email or MIMEText or MIMEMultipart instance"
+        assert (
+            str(exc.value)
+            == "message should be either Email, EmailMessage, Message, MIMEText or MIMEMultipart instance"
+        )
 
     def test_message_and_kwargs(self, postmark, email):
         with pytest.raises(AssertionError) as exc:
             postmark.emails.send(message=email, From="test@test.com")
-        assert str(exc.value).startswith("You should specify either message or From and To parameters")
+        assert str(exc.value).startswith(
+            "You should specify either message or From and To parameters"
+        )
 
     def test_send_email(self, postmark, email, postmark_request):
         postmark.emails.send(message=email)
@@ -146,20 +155,30 @@ class TestSimpleSend:
             ["first@example.com", "second@example.com"],
         ),
     )
-    def test_multiple_addresses(self, postmark, minimal_data, postmark_request, field, value):
+    def test_multiple_addresses(
+        self, postmark, minimal_data, postmark_request, field, value
+    ):
         minimal_data[field] = value
         postmark.emails.send(**minimal_data)
-        assert postmark_request.call_args[1]["json"][field] == "first@example.com,second@example.com"
+        assert (
+            postmark_request.call_args[1]["json"][field]
+            == "first@example.com,second@example.com"
+        )
 
     def test_headers(self, postmark, minimal_data, postmark_request):
         minimal_data["Headers"] = {"Test": 1}
         postmark.emails.send(**minimal_data)
-        assert postmark_request.call_args[1]["json"]["Headers"] == [{"Name": "Test", "Value": 1}]
+        assert postmark_request.call_args[1]["json"]["Headers"] == [
+            {"Name": "Test", "Value": 1}
+        ]
 
     def test_message_stream(self, postmark, minimal_data, postmark_request):
         minimal_data["MessageStream"] = "example-message-stream"
         postmark.emails.send(**minimal_data)
-        assert postmark_request.call_args[1]["json"]["MessageStream"] == "example-message-stream"
+        assert (
+            postmark_request.call_args[1]["json"]["MessageStream"]
+            == "example-message-stream"
+        )
 
     @pytest.mark.parametrize("attachment", SUPPORTED_ATTACHMENTS)
     def test_attachments(self, postmark, minimal_data, postmark_request, attachment):
@@ -269,7 +288,9 @@ class TestEmail:
         assert email.Headers == {}
         email["X-Accept-Language"] = "en-us, en"
         assert email.Headers == {"X-Accept-Language": "en-us, en"}
-        assert email.as_dict()["Headers"] == [{"Name": "X-Accept-Language", "Value": "en-us, en"}]
+        assert email.as_dict()["Headers"] == [
+            {"Name": "X-Accept-Language", "Value": "en-us, en"}
+        ]
 
     def test_unset_header(self, email):
         email["X-Accept-Language"] = "en-us, en"
@@ -284,7 +305,9 @@ class TestEmail:
                 To="receiver@example.com",
                 Subject="Postmark test",
             )
-        assert str(exc.value).startswith("Provide either email TextBody or HtmlBody or both")
+        assert str(exc.value).startswith(
+            "Provide either email TextBody or HtmlBody or both"
+        )
 
     @pytest.mark.parametrize("attachment", SUPPORTED_ATTACHMENTS)
     def test_attach(self, email, postmark_request, attachment):
@@ -382,7 +405,9 @@ class TestDelivery:
 class TestTemplateBatchSend:
     def test_template_email_instance(self, postmark, email_template, postmark_request):
         postmark.emails.send_template_batch(email_template)
-        assert postmark_request.call_args[1]["json"] == {"Messages": (email_template.as_dict(),)}
+        assert postmark_request.call_args[1]["json"] == {
+            "Messages": (email_template.as_dict(),)
+        }
 
     def test_dict(self, postmark, postmark_request):
         template_dict = {

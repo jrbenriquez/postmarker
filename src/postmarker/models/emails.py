@@ -1,8 +1,10 @@
 """Basic ways to send emails."""
+
 import mimetypes
 import os
 from base64 import b64encode
 from email.header import decode_header
+from email.message import EmailMessage, Message
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -38,16 +40,114 @@ def prepare_attachments(attachment):
         if len(attachment) == 4:
             result["ContentID"] = attachment[3]
     elif isinstance(attachment, MIMEBase):
-        payload = attachment.get_payload()
+        # Check MIMEBase BEFORE Message since MIMEBase is a subclass of Message
         content_type = attachment.get_content_type()
+
         # Special case for message/rfc822
         # Even if RFC implies such attachments being not base64-encoded,
         # Postmark requires all attachments to be encoded in this way
-        if content_type == "message/rfc822" and not isinstance(payload, str):
-            payload = b64encode(payload[0].get_payload(decode=True)).decode()
+        if content_type == "message/rfc822":
+            raw_payload = attachment.get_payload()
+            if isinstance(raw_payload, list) and len(raw_payload) > 0:
+                # Django creates RFC822 with a list containing a Message object
+                # Get the string representation and encode it
+                inner_message = raw_payload[0]
+                # Use get_payload() to get the actual content of the inner message
+                if hasattr(inner_message, "get_payload"):
+                    message_content = inner_message.get_payload()
+                    if isinstance(message_content, bytes):
+                        payload = b64encode(message_content).decode()
+                    else:
+                        payload = b64encode(str(message_content).encode()).decode()
+                else:
+                    payload = b64encode(str(inner_message).encode()).decode()
+            else:
+                # Fallback: encode whatever payload we have
+                payload = b64encode(str(raw_payload).encode()).decode()
+        else:
+            # Check if payload is already base64 encoded
+            transfer_encoding = attachment.get("Content-Transfer-Encoding", "")
+
+            # Standard MIME attachments created with encoders.encode_base64() will have
+            # Content-Transfer-Encoding: base64 and payload as base64 string.
+            # For compatibility, if no encoding is specified, assume it's already base64.
+            if not transfer_encoding or transfer_encoding.lower() == "base64":
+                # Payload is already base64 encoded (or assumed to be), use as-is
+                payload = attachment.get_payload()
+            else:
+                # Payload has a different encoding (7bit, quoted-printable, etc.)
+                # Decode it and re-encode to base64
+                raw_payload = attachment.get_payload(decode=True)
+                if raw_payload:
+                    payload = b64encode(raw_payload).decode()
+                else:
+                    # If decode fails, try to get raw payload and encode it
+                    payload = attachment.get_payload()
+                    if isinstance(payload, bytes):
+                        payload = b64encode(payload).decode()
+                    elif isinstance(payload, str):
+                        payload = b64encode(payload.encode()).decode()
+                    else:
+                        payload = b64encode(str(payload).encode()).decode()
+
         result = {
             "Name": attachment.get_filename() or "attachment.txt",
             "Content": payload,
+            "ContentType": content_type,
+        }
+        content_id = attachment.get("Content-ID")
+        if content_id:
+            if content_id.startswith("<") and content_id.endswith(">"):
+                content_id = content_id[1:-1]
+            if (attachment.get("Content-Disposition") or "").startswith("inline"):
+                content_id = "cid:%s" % content_id
+            result["ContentID"] = content_id
+    elif isinstance(attachment, (EmailMessage, Message)):
+        # Handle EmailMessage and Message objects (from email.message module)
+        # These can come from Django's message.message() or deconstruct_multipart
+        # Note: MIMEBase extends Message, so we check MIMEBase first above
+        payload = attachment.get_payload(decode=True)
+        if payload is None:
+            # For multipart or string payloads
+            payload = attachment.get_payload()
+
+        content_type = attachment.get_content_type()
+
+        # Special handling for message/rfc822
+        if content_type == "message/rfc822":
+            # The payload could be a Message object or already bytes/str
+            if hasattr(payload, "as_bytes"):
+                # It's a Message object, serialize it
+                content = b64encode(payload.as_bytes()).decode()
+            elif hasattr(payload, "as_string"):
+                # Older Message API
+                content = b64encode(payload.as_string().encode("utf-8")).decode()
+            elif isinstance(payload, bytes):
+                content = b64encode(payload).decode()
+            elif isinstance(payload, str):
+                content = b64encode(payload.encode("utf-8")).decode()
+            else:
+                # Fallback: serialize the entire attachment
+                content = b64encode(attachment.as_bytes()).decode()
+        elif isinstance(payload, bytes):
+            content = b64encode(payload).decode()
+        elif isinstance(payload, str):
+            content = b64encode(payload.encode("utf-8")).decode()
+        else:
+            # For multipart messages or other complex payloads, serialize the entire message
+            content = b64encode(attachment.as_bytes()).decode()
+
+        filename = attachment.get_filename()
+        if filename is None:
+            # Generate filename based on content type
+            if content_type == "message/rfc822":
+                filename = "message.eml"
+            else:
+                filename = "attachment.txt"
+
+        result = {
+            "Name": filename,
+            "Content": content,
             "ContentType": content_type,
         }
         content_id = attachment.get("Content-ID")
@@ -76,21 +176,33 @@ def deconstruct_multipart_recursive(seen, text, html, attachments, message):
     if message in seen:
         return
     seen.add(message)
-    if isinstance(message, MIMEMultipart):
+    content_type = message.get_content_type()
+
+    # Special case: message/rfc822 should be treated as an attachment, not walked into
+    if content_type == "message/rfc822":
+        # Mark inner messages as seen so they don't get processed separately
+        payload = message.get_payload()
+        if isinstance(payload, list):
+            for part in payload:
+                seen.add(part)
+        attachments.append(message)
+    elif message.is_multipart():
         for part in message.walk():
             deconstruct_multipart_recursive(seen, text, html, attachments, part)
     else:
-        content_type = message.get_content_type()
         if content_type == "text/plain" and not text:
-            text.append(message.get_payload(decode=True).decode("utf8"))
+            # Use get_content() for EmailMessage, fall back to get_payload for MIME
+            if isinstance(message, EmailMessage):
+                text.append(message.get_content())
+            else:
+                text.append(message.get_payload(decode=True).decode("utf8"))
         elif content_type == "text/html" and not html:
-            html.append(message.get_payload(decode=True).decode("utf8"))
+            # Use get_content() for EmailMessage, fall back to get_payload for MIME
+            if isinstance(message, EmailMessage):
+                html.append(message.get_content())
+            else:
+                html.append(message.get_payload(decode=True).decode("utf8"))
         else:
-            # Ignore underlying messages inside `message/rfc822` payload, because the message itself will be passed
-            # as an attachment
-            if content_type == "message/rfc822":
-                for part in message.get_payload():
-                    seen.add(part)
             attachments.append(message)
 
 
@@ -123,11 +235,15 @@ class BaseEmail(Model):
         :return:
         """
         data = super().as_dict()
-        data["Headers"] = [{"Name": name, "Value": value} for name, value in data["Headers"].items()]
+        data["Headers"] = [
+            {"Name": name, "Value": value} for name, value in data["Headers"].items()
+        ]
         for field in ("To", "Cc", "Bcc"):
             if field in data:
                 data[field] = list_to_csv(data[field])
-        data["Attachments"] = [prepare_attachments(attachment) for attachment in data["Attachments"]]
+        data["Attachments"] = [
+            prepare_attachments(attachment) for attachment in data["Attachments"]
+        ]
         return data
 
     def attach(self, *payloads):
@@ -167,12 +283,16 @@ def maybe_decode(value, encoding):
 def prepare_header(value):
     if value is None:
         return value
-    return SEPARATOR.join([maybe_decode(value, encoding) for value, encoding in decode_header(value)])
+    return SEPARATOR.join(
+        [maybe_decode(value, encoding) for value, encoding in decode_header(value)]
+    )
 
 
 class Email(BaseEmail):
     def __init__(self, **kwargs):
-        assert kwargs.get("TextBody") or kwargs.get("HtmlBody"), "Provide either email TextBody or HtmlBody or both"
+        assert kwargs.get("TextBody") or kwargs.get("HtmlBody"), (
+            "Provide either email TextBody or HtmlBody or both"
+        )
         super().__init__(**kwargs)
 
     @classmethod
@@ -258,7 +378,10 @@ class EmailTemplateBatch(Model):
         :rtype: `list`
         """
         emails = self.as_dict(**extra)
-        responses = [self._manager._send_batch_with_template(*batch) for batch in chunks(emails, self.MAX_SIZE)]
+        responses = [
+            self._manager._send_batch_with_template(*batch)
+            for batch in chunks(emails, self.MAX_SIZE)
+        ]
         return sum(responses, [])
 
 
@@ -285,7 +408,7 @@ class EmailBatch(Model):
         """Converts incoming data to properly structured dictionary."""
         if isinstance(email, dict):
             email = Email(manager=self._manager, **email)
-        elif isinstance(email, (MIMEText, MIMEMultipart)):
+        elif isinstance(email, (EmailMessage, MIMEText, MIMEMultipart)):
             email = Email.from_mime(email, self._manager)
         elif not isinstance(email, Email):
             raise ValueError
@@ -299,7 +422,9 @@ class EmailBatch(Model):
         :rtype: `list`
         """
         emails = self.as_dict(**extra)
-        responses = [self._manager._send_batch(*batch) for batch in chunks(emails, self.MAX_SIZE)]
+        responses = [
+            self._manager._send_batch(*batch) for batch in chunks(emails, self.MAX_SIZE)
+        ]
         return sum(responses, [])
 
 
@@ -321,7 +446,9 @@ class EmailManager(ModelManager):
         return self.call("POST", "/email/withTemplate/", data=kwargs)
 
     def _send_batch_with_template(self, *email_templates):
-        return self.call("POST", "/email/batchWithTemplates/", data={"Messages": email_templates})
+        return self.call(
+            "POST", "/email/batchWithTemplates/", data={"Messages": email_templates}
+        )
 
     def _send_batch(self, *emails):
         """Low-level batch send call."""
@@ -348,7 +475,7 @@ class EmailManager(ModelManager):
     ):
         """Sends a single email.
 
-        :param message: :py:class:`Email` or ``email.mime.text.MIMEText`` instance.
+        :param message: :py:class:`Email`, ``email.message.EmailMessage``, or ``email.mime.text.MIMEText`` instance.
         :param str From: The sender email address.
         :param To: Recipient's email address.
                    Multiple recipients could be specified as a list or string with comma separated values.
@@ -371,7 +498,9 @@ class EmailManager(ModelManager):
         :return: Information about sent email.
         :rtype: `dict`
         """
-        assert not (message and (From or To)), "You should specify either message or From and To parameters"
+        assert not (message and (From or To)), (
+            "You should specify either message or From and To parameters"
+        )
         assert TrackLinks in ("None", "HtmlAndText", "HtmlOnly", "TextOnly")
         if message is None:
             message = self.Email(
@@ -391,10 +520,12 @@ class EmailManager(ModelManager):
                 Attachments=Attachments,
                 MessageStream=MessageStream,
             )
-        elif isinstance(message, (MIMEText, MIMEMultipart)):
+        elif isinstance(message, (EmailMessage, Message, MIMEText, MIMEMultipart)):
             message = Email.from_mime(message, self)
         elif not isinstance(message, Email):
-            raise TypeError("message should be either Email or MIMEText or MIMEMultipart instance")
+            raise TypeError(
+                "message should be either Email, EmailMessage, Message, MIMEText or MIMEMultipart instance"
+            )
         return message.send()
 
     def send_with_template(
