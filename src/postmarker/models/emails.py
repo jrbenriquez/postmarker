@@ -94,13 +94,50 @@ def prepare_attachments(attachment):
                 content_id = "cid:%s" % content_id
             result["ContentID"] = content_id
     elif isinstance(attachment, MIMEBase):
-        payload = attachment.get_payload()
         content_type = attachment.get_content_type()
+
         # Special case for message/rfc822
         # Even if RFC implies such attachments being not base64-encoded,
         # Postmark requires all attachments to be encoded in this way
-        if content_type == "message/rfc822" and not isinstance(payload, str):
-            payload = b64encode(payload[0].get_payload(decode=True)).decode()
+        if content_type == "message/rfc822":
+            raw_payload = attachment.get_payload()
+            if isinstance(raw_payload, list) and len(raw_payload) > 0:
+                # Django creates RFC822 with a list containing a Message object
+                # Get the string representation and encode it
+                inner_message = raw_payload[0]
+                # Use get_payload() to get the actual content of the inner message
+                if hasattr(inner_message, "get_payload"):
+                    message_content = inner_message.get_payload()
+                    if isinstance(message_content, bytes):
+                        payload = b64encode(message_content).decode()
+                    else:
+                        payload = b64encode(str(message_content).encode()).decode()
+                else:
+                    payload = b64encode(str(inner_message).encode()).decode()
+            else:
+                # Fallback: encode whatever payload we have
+                payload = b64encode(str(raw_payload).encode()).decode()
+        else:
+            # Check if payload is already base64 encoded
+            transfer_encoding = attachment.get("Content-Transfer-Encoding", "").lower()
+
+            if transfer_encoding == "base64":
+                # Payload is already base64 encoded, use as-is
+                payload = attachment.get_payload()
+            else:
+                # Payload is not encoded, we need to encode it
+                # get_payload(decode=True) returns bytes
+                raw_payload = attachment.get_payload(decode=True)
+                if raw_payload:
+                    payload = b64encode(raw_payload).decode()
+                else:
+                    # If decode fails, payload might already be a string
+                    payload = attachment.get_payload()
+                    if isinstance(payload, bytes):
+                        payload = b64encode(payload).decode()
+                    elif not isinstance(payload, str):
+                        payload = b64encode(str(payload).encode()).decode()
+
         result = {
             "Name": attachment.get_filename() or "attachment.txt",
             "Content": payload,
@@ -132,11 +169,20 @@ def deconstruct_multipart_recursive(seen, text, html, attachments, message):
     if message in seen:
         return
     seen.add(message)
-    if message.is_multipart():
+    content_type = message.get_content_type()
+
+    # Special case: message/rfc822 should be treated as an attachment, not walked into
+    if content_type == "message/rfc822":
+        # Mark inner messages as seen so they don't get processed separately
+        payload = message.get_payload()
+        if isinstance(payload, list):
+            for part in payload:
+                seen.add(part)
+        attachments.append(message)
+    elif message.is_multipart():
         for part in message.walk():
             deconstruct_multipart_recursive(seen, text, html, attachments, part)
     else:
-        content_type = message.get_content_type()
         if content_type == "text/plain" and not text:
             # Use get_content() for EmailMessage, fall back to get_payload for MIME
             if isinstance(message, EmailMessage):
@@ -150,11 +196,6 @@ def deconstruct_multipart_recursive(seen, text, html, attachments, message):
             else:
                 html.append(message.get_payload(decode=True).decode("utf8"))
         else:
-            # Ignore underlying messages inside `message/rfc822` payload, because the message itself will be passed
-            # as an attachment
-            if content_type == "message/rfc822":
-                for part in message.get_payload():
-                    seen.add(part)
             attachments.append(message)
 
 
