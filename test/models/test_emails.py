@@ -133,7 +133,7 @@ class TestSimpleSend:
             postmark.emails.send(message=object())
         assert (
             str(exc.value)
-            == "message should be either Email, EmailMessage, MIMEText or MIMEMultipart instance"
+            == "message should be either Email, EmailMessage, Message, MIMEText or MIMEMultipart instance"
         )
 
     def test_message_and_kwargs(self, postmark, email):

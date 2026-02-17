@@ -4,7 +4,7 @@ import mimetypes
 import os
 from base64 import b64encode
 from email.header import decode_header
-from email.message import EmailMessage
+from email.message import EmailMessage, Message
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -39,8 +39,8 @@ def prepare_attachments(attachment):
         }
         if len(attachment) == 4:
             result["ContentID"] = attachment[3]
-    elif isinstance(attachment, EmailMessage):
-        # Handle EmailMessage objects (from email.message module)
+    elif isinstance(attachment, (EmailMessage, Message)):
+        # Handle EmailMessage and Message objects (from email.message module)
         # These can come from Django's message.message() or deconstruct_multipart
         payload = attachment.get_payload(decode=True)
         if payload is None:
@@ -472,11 +472,11 @@ class EmailManager(ModelManager):
                 Attachments=Attachments,
                 MessageStream=MessageStream,
             )
-        elif isinstance(message, (EmailMessage, MIMEText, MIMEMultipart)):
+        elif isinstance(message, (EmailMessage, Message, MIMEText, MIMEMultipart)):
             message = Email.from_mime(message, self)
         elif not isinstance(message, Email):
             raise TypeError(
-                "message should be either Email, EmailMessage, MIMEText or MIMEMultipart instance"
+                "message should be either Email, EmailMessage, Message, MIMEText or MIMEMultipart instance"
             )
         return message.send()
 
