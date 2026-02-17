@@ -1,4 +1,12 @@
+import sys
+
 import pytest
+
+# pytest-tornado is not compatible with Python 3.12+
+pytestmark = pytest.mark.skipif(
+    sys.version_info >= (3, 12),
+    reason="pytest-tornado is not compatible with Python 3.12+",
+)
 
 MOCK_SEND_BATCH_RESPONSE = (
     b'[{"ErrorCode": 0, "To": "receiver@example.com", "SubmittedAt": '
