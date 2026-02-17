@@ -96,13 +96,6 @@ jobs:
           - os: windows-latest
             python: "3.12"
             tox-env: py-django42
-          # Python 3.13: Test with Django 5.0
-          - os: ubuntu-20.04
-            python: "3.13"
-            tox-env: py-django50
-          - os: windows-latest
-            python: "3.13"
-            tox-env: py-django50
           # PyPy: Test with Django 3.2
           - os: ubuntu-20.04
             python: "pypy-3.7"
