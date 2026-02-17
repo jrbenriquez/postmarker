@@ -39,61 +39,8 @@ def prepare_attachments(attachment):
         }
         if len(attachment) == 4:
             result["ContentID"] = attachment[3]
-    elif isinstance(attachment, (EmailMessage, Message)):
-        # Handle EmailMessage and Message objects (from email.message module)
-        # These can come from Django's message.message() or deconstruct_multipart
-        payload = attachment.get_payload(decode=True)
-        if payload is None:
-            # For multipart or string payloads
-            payload = attachment.get_payload()
-
-        content_type = attachment.get_content_type()
-
-        # Special handling for message/rfc822
-        if content_type == "message/rfc822":
-            # The payload could be a Message object or already bytes/str
-            if hasattr(payload, "as_bytes"):
-                # It's a Message object, serialize it
-                content = b64encode(payload.as_bytes()).decode()
-            elif hasattr(payload, "as_string"):
-                # Older Message API
-                content = b64encode(payload.as_string().encode("utf-8")).decode()
-            elif isinstance(payload, bytes):
-                content = b64encode(payload).decode()
-            elif isinstance(payload, str):
-                content = b64encode(payload.encode("utf-8")).decode()
-            else:
-                # Fallback: serialize the entire attachment
-                content = b64encode(attachment.as_bytes()).decode()
-        elif isinstance(payload, bytes):
-            content = b64encode(payload).decode()
-        elif isinstance(payload, str):
-            content = b64encode(payload.encode("utf-8")).decode()
-        else:
-            # For multipart messages or other complex payloads, serialize the entire message
-            content = b64encode(attachment.as_bytes()).decode()
-
-        filename = attachment.get_filename()
-        if filename is None:
-            # Generate filename based on content type
-            if content_type == "message/rfc822":
-                filename = "message.eml"
-            else:
-                filename = "attachment.txt"
-
-        result = {
-            "Name": filename,
-            "Content": content,
-            "ContentType": content_type,
-        }
-        content_id = attachment.get("Content-ID")
-        if content_id:
-            if content_id.startswith("<") and content_id.endswith(">"):
-                content_id = content_id[1:-1]
-            if (attachment.get("Content-Disposition") or "").startswith("inline"):
-                content_id = "cid:%s" % content_id
-            result["ContentID"] = content_id
     elif isinstance(attachment, MIMEBase):
+        # Check MIMEBase BEFORE Message since MIMEBase is a subclass of Message
         content_type = attachment.get_content_type()
 
         # Special case for message/rfc822
@@ -141,6 +88,61 @@ def prepare_attachments(attachment):
         result = {
             "Name": attachment.get_filename() or "attachment.txt",
             "Content": payload,
+            "ContentType": content_type,
+        }
+        content_id = attachment.get("Content-ID")
+        if content_id:
+            if content_id.startswith("<") and content_id.endswith(">"):
+                content_id = content_id[1:-1]
+            if (attachment.get("Content-Disposition") or "").startswith("inline"):
+                content_id = "cid:%s" % content_id
+            result["ContentID"] = content_id
+    elif isinstance(attachment, (EmailMessage, Message)):
+        # Handle EmailMessage and Message objects (from email.message module)
+        # These can come from Django's message.message() or deconstruct_multipart
+        # Note: MIMEBase extends Message, so we check MIMEBase first above
+        payload = attachment.get_payload(decode=True)
+        if payload is None:
+            # For multipart or string payloads
+            payload = attachment.get_payload()
+
+        content_type = attachment.get_content_type()
+
+        # Special handling for message/rfc822
+        if content_type == "message/rfc822":
+            # The payload could be a Message object or already bytes/str
+            if hasattr(payload, "as_bytes"):
+                # It's a Message object, serialize it
+                content = b64encode(payload.as_bytes()).decode()
+            elif hasattr(payload, "as_string"):
+                # Older Message API
+                content = b64encode(payload.as_string().encode("utf-8")).decode()
+            elif isinstance(payload, bytes):
+                content = b64encode(payload).decode()
+            elif isinstance(payload, str):
+                content = b64encode(payload.encode("utf-8")).decode()
+            else:
+                # Fallback: serialize the entire attachment
+                content = b64encode(attachment.as_bytes()).decode()
+        elif isinstance(payload, bytes):
+            content = b64encode(payload).decode()
+        elif isinstance(payload, str):
+            content = b64encode(payload.encode("utf-8")).decode()
+        else:
+            # For multipart messages or other complex payloads, serialize the entire message
+            content = b64encode(attachment.as_bytes()).decode()
+
+        filename = attachment.get_filename()
+        if filename is None:
+            # Generate filename based on content type
+            if content_type == "message/rfc822":
+                filename = "message.eml"
+            else:
+                filename = "attachment.txt"
+
+        result = {
+            "Name": filename,
+            "Content": content,
             "ContentType": content_type,
         }
         content_id = attachment.get("Content-ID")

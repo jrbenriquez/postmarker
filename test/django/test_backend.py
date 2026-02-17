@@ -55,7 +55,10 @@ def test_send_mail(postmark_request, settings):
             "From": "sender@example.com",
         },
     )
-    assert postmark_request.call_args[1]["headers"]["X-Postmark-Server-Token"] == settings.POSTMARK["TOKEN"]
+    assert (
+        postmark_request.call_args[1]["headers"]["X-Postmark-Server-Token"]
+        == settings.POSTMARK["TOKEN"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -75,7 +78,10 @@ def test_reply_to_cc_bcc(postmark_request, kwarg, key):
         **{kwarg: ["r1@example.com", "r2@example.com"]},
     )
     message.send()
-    assert postmark_request.call_args[1]["json"][0][key] == "r1@example.com, r2@example.com"
+    assert (
+        postmark_request.call_args[1]["json"][0][key]
+        == "r1@example.com, r2@example.com"
+    )
 
 
 EXAMPLE_BATCH_RESPONSE = [
@@ -106,7 +112,9 @@ class TestMassSend:
     def batch_send(self):
         @contextmanager
         def manager(return_value=EXAMPLE_BATCH_RESPONSE):
-            with patch("postmarker.models.emails.EmailBatch.send", return_value=return_value) as send:
+            with patch(
+                "postmarker.models.emails.EmailBatch.send", return_value=return_value
+            ) as send:
                 yield send
 
         return manager
@@ -130,7 +138,10 @@ class TestMassSend:
         with batch_send(EXAMPLE_BATCH_RESPONSE * 2):
             with pytest.raises(PostmarkerException) as exc:
                 send_mass_mail(self.messages * 2, fail_silently=False)
-            assert str(exc.value) == "[[406] Bla bla, inactive recipient, [406] Bla bla, inactive recipient]"
+            assert (
+                str(exc.value)
+                == "[[406] Bla bla, inactive recipient, [406] Bla bla, inactive recipient]"
+            )
 
 
 @pytest.fixture
@@ -155,9 +166,17 @@ def test_send_mail_with_attachment(postmark_request, message):
     """
     message.attach("hello.txt", "Hello World", "text/plain")
     message.send()
+    # Postmark API requires all attachment content to be base64 encoded
+    expected_content = "SGVsbG8gV29ybGQ="  # base64.b64encode(b"Hello World").decode()
     assert postmark_request.call_args[1]["json"][0] == {
         "TextBody": "text_content",
-        "Attachments": [{"Name": "hello.txt", "Content": "Hello World", "ContentType": "text/plain"}],
+        "Attachments": [
+            {
+                "Name": "hello.txt",
+                "Content": expected_content,
+                "ContentType": "text/plain",
+            }
+        ],
         "From": "sender@example.com",
         "HtmlBody": None,
         "ReplyTo": None,
@@ -322,7 +341,10 @@ def test_missing_api_key(settings):
 def test_test_mode(settings, postmark_request):
     settings.POSTMARK = {"TEST_MODE": True}
     send_mail(**SEND_KWARGS)
-    assert postmark_request.call_args[1]["headers"]["X-Postmark-Server-Token"] == TEST_TOKEN
+    assert (
+        postmark_request.call_args[1]["headers"]["X-Postmark-Server-Token"]
+        == TEST_TOKEN
+    )
 
 
 def test_extra_options(settings, postmark_request):
