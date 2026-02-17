@@ -1,4 +1,5 @@
 """Basic ways to send emails."""
+
 import mimetypes
 import os
 from base64 import b64encode
@@ -45,15 +46,33 @@ def prepare_attachments(attachment):
         if payload is None:
             # For multipart or string payloads
             payload = attachment.get_payload()
-        if isinstance(payload, bytes):
+
+        content_type = attachment.get_content_type()
+
+        # Special handling for message/rfc822
+        if content_type == "message/rfc822":
+            # The payload could be a Message object or already bytes/str
+            if hasattr(payload, "as_bytes"):
+                # It's a Message object, serialize it
+                content = b64encode(payload.as_bytes()).decode()
+            elif hasattr(payload, "as_string"):
+                # Older Message API
+                content = b64encode(payload.as_string().encode("utf-8")).decode()
+            elif isinstance(payload, bytes):
+                content = b64encode(payload).decode()
+            elif isinstance(payload, str):
+                content = b64encode(payload.encode("utf-8")).decode()
+            else:
+                # Fallback: serialize the entire attachment
+                content = b64encode(attachment.as_bytes()).decode()
+        elif isinstance(payload, bytes):
             content = b64encode(payload).decode()
         elif isinstance(payload, str):
-            content = b64encode(payload.encode('utf-8')).decode()
+            content = b64encode(payload.encode("utf-8")).decode()
         else:
-            # For multipart messages, serialize the entire message
+            # For multipart messages or other complex payloads, serialize the entire message
             content = b64encode(attachment.as_bytes()).decode()
-        
-        content_type = attachment.get_content_type()
+
         filename = attachment.get_filename()
         if filename is None:
             # Generate filename based on content type
@@ -61,7 +80,7 @@ def prepare_attachments(attachment):
                 filename = "message.eml"
             else:
                 filename = "attachment.txt"
-        
+
         result = {
             "Name": filename,
             "Content": content,
@@ -168,11 +187,15 @@ class BaseEmail(Model):
         :return:
         """
         data = super().as_dict()
-        data["Headers"] = [{"Name": name, "Value": value} for name, value in data["Headers"].items()]
+        data["Headers"] = [
+            {"Name": name, "Value": value} for name, value in data["Headers"].items()
+        ]
         for field in ("To", "Cc", "Bcc"):
             if field in data:
                 data[field] = list_to_csv(data[field])
-        data["Attachments"] = [prepare_attachments(attachment) for attachment in data["Attachments"]]
+        data["Attachments"] = [
+            prepare_attachments(attachment) for attachment in data["Attachments"]
+        ]
         return data
 
     def attach(self, *payloads):
@@ -212,12 +235,16 @@ def maybe_decode(value, encoding):
 def prepare_header(value):
     if value is None:
         return value
-    return SEPARATOR.join([maybe_decode(value, encoding) for value, encoding in decode_header(value)])
+    return SEPARATOR.join(
+        [maybe_decode(value, encoding) for value, encoding in decode_header(value)]
+    )
 
 
 class Email(BaseEmail):
     def __init__(self, **kwargs):
-        assert kwargs.get("TextBody") or kwargs.get("HtmlBody"), "Provide either email TextBody or HtmlBody or both"
+        assert kwargs.get("TextBody") or kwargs.get("HtmlBody"), (
+            "Provide either email TextBody or HtmlBody or both"
+        )
         super().__init__(**kwargs)
 
     @classmethod
@@ -303,7 +330,10 @@ class EmailTemplateBatch(Model):
         :rtype: `list`
         """
         emails = self.as_dict(**extra)
-        responses = [self._manager._send_batch_with_template(*batch) for batch in chunks(emails, self.MAX_SIZE)]
+        responses = [
+            self._manager._send_batch_with_template(*batch)
+            for batch in chunks(emails, self.MAX_SIZE)
+        ]
         return sum(responses, [])
 
 
@@ -344,7 +374,9 @@ class EmailBatch(Model):
         :rtype: `list`
         """
         emails = self.as_dict(**extra)
-        responses = [self._manager._send_batch(*batch) for batch in chunks(emails, self.MAX_SIZE)]
+        responses = [
+            self._manager._send_batch(*batch) for batch in chunks(emails, self.MAX_SIZE)
+        ]
         return sum(responses, [])
 
 
@@ -366,7 +398,9 @@ class EmailManager(ModelManager):
         return self.call("POST", "/email/withTemplate/", data=kwargs)
 
     def _send_batch_with_template(self, *email_templates):
-        return self.call("POST", "/email/batchWithTemplates/", data={"Messages": email_templates})
+        return self.call(
+            "POST", "/email/batchWithTemplates/", data={"Messages": email_templates}
+        )
 
     def _send_batch(self, *emails):
         """Low-level batch send call."""
@@ -416,7 +450,9 @@ class EmailManager(ModelManager):
         :return: Information about sent email.
         :rtype: `dict`
         """
-        assert not (message and (From or To)), "You should specify either message or From and To parameters"
+        assert not (message and (From or To)), (
+            "You should specify either message or From and To parameters"
+        )
         assert TrackLinks in ("None", "HtmlAndText", "HtmlOnly", "TextOnly")
         if message is None:
             message = self.Email(
@@ -439,7 +475,9 @@ class EmailManager(ModelManager):
         elif isinstance(message, (EmailMessage, MIMEText, MIMEMultipart)):
             message = Email.from_mime(message, self)
         elif not isinstance(message, Email):
-            raise TypeError("message should be either Email, EmailMessage, MIMEText or MIMEMultipart instance")
+            raise TypeError(
+                "message should be either Email, EmailMessage, MIMEText or MIMEMultipart instance"
+            )
         return message.send()
 
     def send_with_template(
