@@ -97,12 +97,7 @@ jobs:
             python: "3.12"
             tox-env: py-django42
           # PyPy: Test with Django 3.2
-          - os: ubuntu-20.04
-            python: "pypy-3.7"
-            tox-env: py-django32
-          - os: windows-latest
-            python: "pypy-3.7"
-            tox-env: py-django32
+          # Note: PyPy 3.7 excluded due to asgiref incompatibility with Django 3.2
           - os: ubuntu-20.04
             python: "pypy-3.8"
             tox-env: py-django32
