@@ -52,7 +52,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04, windows-latest]
-        python: ["3.6", "3.7", "3.8", "3.9", "3.10", "pypy-3.7", "pypy-3.8"]
+        python: ["3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "pypy-3.7", "pypy-3.8"]
 
     name: ${{ matrix.python }} on ${{ matrix.os }} tests
     runs-on: ${{ matrix.os }}
@@ -83,7 +83,7 @@ jobs:
   tests-django:
     strategy:
       matrix:
-        django_version: ["22", "32", "40"]
+        django_version: ["22", "32", "40", "42", "50", "60"]
 
     name: Django ${{ matrix.django_version }} tests
     runs-on: ubuntu-20.04
