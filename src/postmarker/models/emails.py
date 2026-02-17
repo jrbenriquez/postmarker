@@ -66,23 +66,28 @@ def prepare_attachments(attachment):
                 payload = b64encode(str(raw_payload).encode()).decode()
         else:
             # Check if payload is already base64 encoded
-            transfer_encoding = attachment.get("Content-Transfer-Encoding", "").lower()
+            transfer_encoding = attachment.get("Content-Transfer-Encoding", "")
 
-            if transfer_encoding == "base64":
-                # Payload is already base64 encoded, use as-is
+            # Standard MIME attachments created with encoders.encode_base64() will have
+            # Content-Transfer-Encoding: base64 and payload as base64 string.
+            # For compatibility, if no encoding is specified, assume it's already base64.
+            if not transfer_encoding or transfer_encoding.lower() == "base64":
+                # Payload is already base64 encoded (or assumed to be), use as-is
                 payload = attachment.get_payload()
             else:
-                # Payload is not encoded, we need to encode it
-                # get_payload(decode=True) returns bytes
+                # Payload has a different encoding (7bit, quoted-printable, etc.)
+                # Decode it and re-encode to base64
                 raw_payload = attachment.get_payload(decode=True)
                 if raw_payload:
                     payload = b64encode(raw_payload).decode()
                 else:
-                    # If decode fails, payload might already be a string
+                    # If decode fails, try to get raw payload and encode it
                     payload = attachment.get_payload()
                     if isinstance(payload, bytes):
                         payload = b64encode(payload).decode()
-                    elif not isinstance(payload, str):
+                    elif isinstance(payload, str):
+                        payload = b64encode(payload.encode()).decode()
+                    else:
                         payload = b64encode(str(payload).encode()).decode()
 
         result = {
